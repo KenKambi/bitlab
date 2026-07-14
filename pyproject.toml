@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bitlab"
+version = "0.1.0"
+description = "A toolkit for embedded systems, binary data, and digital communications: parity, Hamming codes, and CRC — with C code export."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = [
+    "parity",
+    "hamming-code",
+    "crc",
+    "crc8",
+    "crc16",
+    "crc32",
+    "error-detection",
+    "error-correction",
+    "embedded",
+    "serial",
+    "uart",
+    "bit-manipulation",
+    "c-code-generation",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Communications",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Education",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/KenKambi/bitlab"
+Issues = "https://github.com/KenKambi/bitlab/issues"
+
+[project.scripts]
+bitlab = "bitlab.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "build", "twine"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bitlab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
