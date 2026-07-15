@@ -27,6 +27,9 @@ from .crc.explain import explain as crc_explain
 from .crc.presets import PRESETS
 from .parity.hamming import decode_hamming, encode_hamming
 from .parity.parity import ParityType, append_parity, check_parity, get_parity_bit
+from .registers.codegen import export_c as reg_export_c
+from .registers.core import Register
+from .registers.explain import explain as reg_explain
 
 
 def _parse_number(token: str) -> int:
@@ -39,6 +42,33 @@ def _parse_crc_data(value: str, as_hex: bool) -> bytes:
         cleaned = value.replace(" ", "").replace("0x", "")
         return bytes.fromhex(cleaned)
     return value.encode("utf-8")
+
+
+def _build_register(name: str, size: int, field_specs: "list[str]") -> Register:
+    reg = Register(name, size_bits=size)
+    for spec in field_specs:
+        if ":" not in spec:
+            raise SystemExit(f"Invalid --field {spec!r}, expected NAME:BIT or NAME:START-END")
+        fname, bits = spec.split(":", 1)
+        if "-" in bits:
+            start_str, end_str = bits.split("-", 1)
+            reg.add_field(fname, bit_range=(int(start_str), int(end_str)))
+        else:
+            reg.add_field(fname, bit_index=int(bits))
+    return reg
+
+
+def _parse_pack_values(spec: str) -> "dict[str, int]":
+    values = {}
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            raise SystemExit(f"Invalid --pack entry {part!r}, expected NAME=VALUE")
+        name, val = part.split("=", 1)
+        values[name.strip()] = _parse_number(val.strip())
+    return values
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -90,6 +120,33 @@ def _build_parser() -> argparse.ArgumentParser:
     export_p = crc_sub.add_parser("export-c", help="Export a CRC config as C source")
     export_p.add_argument("--preset", choices=list(PRESETS), default="crc32")
     export_p.add_argument("--name", type=str, default=None, help="C function name")
+
+    # --- registers ---
+    reg_parser = subparsers.add_parser("registers", help="Register bit-field mapper")
+    reg_sub = reg_parser.add_subparsers(dest="command")
+
+    def add_register_definition_args(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument("--name", type=str, required=True, help="Register name")
+        sub.add_argument("--size", type=int, default=8, help="Register width in bits (default 8)")
+        sub.add_argument(
+            "--field",
+            action="append",
+            required=True,
+            metavar="NAME:BIT",
+            help="Add a field. NAME:5 for a single bit, NAME:1-3 for a bit range. "
+            "Repeat --field for each field.",
+        )
+
+    reg_explain_p = reg_sub.add_parser("explain", help="Show a register's bit layout")
+    add_register_definition_args(reg_explain_p)
+    reg_explain_p.add_argument(
+        "--pack", type=str, default=None, metavar="NAME=VAL,...",
+        help="Also trace packing these field values, e.g. ENABLE=1,MODE=5",
+    )
+
+    reg_export_p = reg_sub.add_parser("export-c", help="Export a register as C source")
+    add_register_definition_args(reg_export_p)
+    reg_export_p.add_argument("--style", choices=["defines", "struct"], default="defines")
 
     return parser
 
@@ -147,6 +204,15 @@ def _main(argv: "list[str] | None") -> int:
             print(crc_explain(data, config, max_bytes=args.max_bytes))
         elif args.command == "export-c":
             print(crc_export_c(config, function_name=args.name))
+        return 0
+
+    if args.group == "registers":
+        reg = _build_register(args.name, args.size, args.field)
+        if args.command == "explain":
+            pack_values = _parse_pack_values(args.pack) if args.pack else {}
+            print(reg_explain(reg, **pack_values))
+        elif args.command == "export-c":
+            print(reg_export_c(reg, style=args.style))
         return 0
 
     parser.print_help()

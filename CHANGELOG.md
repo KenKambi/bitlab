@@ -8,9 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- Register field mapper (`bitlab.registers`) — define a hardware register's
-  bit layout in Python, pack/unpack values, export to C `#define`s or a
-  bitfield struct.
 - Computer architecture toolkit (`bitlab.arch`) — IEEE 754 float
   deconstruction, endianness swapping, Gray code, Q-format fixed-point
   conversion.
@@ -19,10 +16,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Reed-Solomon burst error correction — planned as a later, dedicated
   release given its complexity.
 
-## [0.1.0] - 2026-07-14
+## [0.2.0] - 15-07-2026
 
 ### Added
-- **Named the project `bitlab`** and
+- **New `bitlab.registers` submodule**: hardware register bit-field
+  mapping, the signature embedded-dev feature.
+  - `Register(name, size_bits=8)` — define a register's layout with
+    `add_field(name, bit_index=...)` or `add_field(name, bit_range=(start, end))`.
+    Validates overlapping fields and out-of-bounds fields at definition time.
+  - `pack(**values)` / `unpack(raw)` — convert between named field values
+    and a raw integer.
+  - `get_field(raw, name)` / `set_field(raw, name, value)` — read/modify a
+    single field via read-modify-write, preserving other bits.
+  - `reserved_ranges()` — reports unassigned bit ranges.
+  - `explain(reg, **values)`: datasheet-style bit diagram, field list, and
+    (when field values are given) a step-by-step pack trace.
+  - `export_c(reg, style="defines"|"struct")`:
+    - `"defines"` (default) — portable `#define` position/mask macros plus
+      `SET_`/`GET_` helper macros. Recommended: plain bitwise ops behave
+      identically on every compiler/target.
+    - `"struct"` — a C bit-field struct, with an explicit comment noting
+      that C leaves bit-field allocation order implementation-defined
+      (C99 6.7.2.1p10), so exact hardware bit placement should be verified
+      against your compiler's documentation.
+  - Both C export styles are validated by actually compiling the generated
+    code with `gcc` and comparing the result to Python's `pack()`.
+- `bitlab registers explain` and `bitlab registers export-c` CLI
+  subcommands, using a `--field NAME:BIT` / `NAME:START-END` syntax.
+- 21 new tests (77 total), including compiled-C correctness checks for both
+  export styles.
+
+## [0.1.0] - 14-07-2026
+
+### Added
+- **Renamed the project from `parity-toolkit` to `bitlab`**, and
   restructured it as submodules under one umbrella package rather than a
   flat namespace, to give the project room to grow beyond parity:
   ```
@@ -58,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   vs. table-driven CRC implementations and end-to-end compilation of
   generated C source.
 
----
 
-[Unreleased]: https://github.com/KenKambi/bitlab/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/KenKambi/bitlab/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/KenKambi/bitlab/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KenKambi/bitlab/releases/tag/v0.1.0
