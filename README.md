@@ -1,7 +1,8 @@
 # bitlab
 
-[![CI](https://github.com/KenKambi/bitlab/actions/workflows/ci.yml/badge.svg)](https://github.com/KenKambi/bitlab/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/bitlab.svg)](https://pypi.org/project/bitlab/)
+[![CI](https://github.com/KenKambi/bitlab/actions/workflows/ci.yml/badge.svg)](https://github.com/KenKambi/bitlab/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/pepy/dt/bitlab)](https://pepy.tech/projects/bitlab)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Design. Understand. Ship it.**
