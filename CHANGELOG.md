@@ -8,13 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- Computer architecture toolkit (`bitlab.arch`) — IEEE 754 float
-  deconstruction, endianness swapping, Gray code, Q-format fixed-point
-  conversion.
 - COBS framing (`bitlab.comms`) — Consistent Overhead Byte Stuffing for
   serial protocols.
 - Reed-Solomon burst error correction — planned as a later, dedicated
   release given its complexity.
+
+## [0.3.0] - 16-07-2026
+
+### Added
+- **New `bitlab.arch` submodule**: computer architecture toolkit.
+  - **IEEE 754 deconstruction** (`ieee754.py`): `decompose(value, width=32|64)`
+    breaks a float into sign/exponent/mantissa fields and classifies it
+    (normal, subnormal, zero, infinity, nan); `compose(...)` rebuilds a
+    float from raw fields; `to_bits`/`from_bits` for the raw bit pattern.
+    Built on Python's `struct` module (the platform's native IEEE 754
+    implementation) rather than reimplemented float math, so special values
+    can't drift from correct behavior.
+  - **Endianness** (`endianness.py`): `swap_endianness(value, width_bytes)`,
+    plus `to_big_endian`/`to_little_endian`/`to_bytes`/`from_bytes` helpers.
+  - **Gray code** (`gray.py`): `binary_to_gray`/`gray_to_binary`. Verified
+    against the actual property Gray code exists for — every pair of
+    consecutive values differs by exactly one bit — not just round-trip
+    correctness.
+  - **Q-format fixed-point** (`fixed_point.py`): `float_to_q`/`q_to_float`
+    for Qm.n fixed-point conversion (e.g. `"Q1.15"`, `"Q8.8"`), with range
+    checking and optional saturation, for MCUs without an FPU.
+  - `explain_float`, `explain_endianness`, `explain_gray`,
+    `explain_fixed_point`: step-by-step traces for each topic, following
+    the same Compute/Explain pattern as `crc` and `registers`.
+  - `export_c_endian_swap(width_bytes)` and `export_c_fixed_point(q_format)`:
+    C99 code generation for the two topics with genuine embedded-C payoff.
+    (IEEE 754 and Gray code are intentionally not exported to C — see the
+    `codegen.py` module docstring for why.) Both validated by compiling the
+    generated C with `gcc` and comparing against Python.
+- `bitlab arch float|endian|gray-encode|gray-decode|q-encode|q-decode` CLI
+  subcommands.
+- 42 new tests (119 total).
 
 ## [0.2.0] - 15-07-2026
 
@@ -85,7 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   vs. table-driven CRC implementations and end-to-end compilation of
   generated C source.
 
-
-[Unreleased]: https://github.com/KenKambi/bitlab/compare/v0.2.0...HEAD
+  
+[Unreleased]: https://github.com/KenKambi/bitlab/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/KenKambi/bitlab/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/KenKambi/bitlab/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KenKambi/bitlab/releases/tag/v0.1.0

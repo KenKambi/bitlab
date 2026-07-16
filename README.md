@@ -76,7 +76,35 @@ bitlab/
 ├── bitutils/    foundational bit ops shared by every submodule
 ├── parity/      parity bit checking + Hamming(7,4) error correction
 ├── crc/         CRC-8/16/32, generic engine, explain(), export_c()
-└── registers/   hardware register bit-field mapper, explain(), export_c()
+├── registers/   hardware register bit-field mapper, explain(), export_c()
+└── arch/        IEEE 754, endianness, Gray code, Q-format fixed-point
+```
+### `bitlab.bitutils` — shared foundation
+
+```python
+from bitlab.bitutils import popcount, reflect, rotate_left, rotate_right
+
+popcount(0b1011)                 # -> 3
+reflect(0b1100, 4)               # -> 0b0011
+rotate_left(0b10000001, 1, 8)     # -> 0b00000011
+```
+### `bitlab.parity` — parity bit, Hamming(7,4)
+
+```python
+from bitlab.parity import get_parity_bit, append_parity, check_parity
+
+get_parity_bit(0b1011, "even", 4)      # -> 1
+append_parity(0b1011, "even", 4)       # -> 0b11011
+check_parity(0b11011, "even", 4)       # -> True
+```
+
+```python
+from bitlab.parity import encode_hamming, decode_hamming
+
+codeword = encode_hamming(0b1101)
+corrupted = codeword ^ 0b0000100        # simulate a single-bit flip
+decode_hamming(corrupted)
+# HammingDecodeResult(data=13, error_position=6, corrected=True, codeword=...)
 ```
 
 ### `bitlab.crc` — crc8/16/32, explain
@@ -108,7 +136,7 @@ my_crc = CRCConfig(
 crc(b"some data", my_crc)
 ```
 
-### `bitlab.registers` — embedded, explaim
+### `bitlab.registers` — embedded, explain
 Firmware engineers hand-write register bitmasks constantly. Define the
 layout once, pack/unpack named fields instead of shifting magic numbers by
 hand, and export it straight to C.
@@ -165,35 +193,70 @@ your compiler before trusting exact hardware placement.
 #define UART_CR1_GET_ENABLE(reg) \
     (((uint8_t)(reg) & UART_CR1_ENABLE_MASK) >> UART_CR1_ENABLE_POS)
 ```
+### `bitlab.arch` — computer architecture toolkit
 
-### `bitlab.parity` — parity bit, Hamming(7,4)
+IEEE 754 float deconstruction, endianness conversion, Gray code, and
+Q-format fixed-point.
 
 ```python
-from bitlab.parity import get_parity_bit, append_parity, check_parity
+from bitlab.arch import decompose
 
-get_parity_bit(0b1011, "even", 4)      # -> 1
-append_parity(0b1011, "even", 4)       # -> 0b11011
-check_parity(0b11011, "even", 4)       # -> True
+c = decompose(0.15625)
+c.sign, c.exponent, c.classification   # -> (0, -3, 'normal')
+hex(c.bits)                             # -> '0x3e200000'
+```
+
+The decomposition is built on Python's `struct` module — the platform's
+actual IEEE 754 implementation — rather than reimplemented bit math, so
+zero, subnormals, infinities, and NaN all decompose correctly without
+special-casing.
+
+```python
+from bitlab.arch import swap_endianness
+
+hex(swap_endianness(0x12345678, 4))   # -> '0x78563412'
 ```
 
 ```python
-from bitlab.parity import encode_hamming, decode_hamming
+from bitlab.arch import binary_to_gray, gray_to_binary
 
-codeword = encode_hamming(0b1101)
-corrupted = codeword ^ 0b0000100        # simulate a single-bit flip
-decode_hamming(corrupted)
-# HammingDecodeResult(data=13, error_position=6, corrected=True, codeword=...)
+bin(binary_to_gray(0b1011))    # -> '0b1110'
+bin(gray_to_binary(0b1110))    # -> '0b1011'
 ```
-
-### `bitlab.bitutils` — shared foundation
 
 ```python
-from bitlab.bitutils import popcount, reflect, rotate_left, rotate_right
+from bitlab.arch import float_to_q, q_to_float
 
-popcount(0b1011)                 # -> 3
-reflect(0b1100, 4)               # -> 0b0011
-rotate_left(0b10000001, 1, 8)     # -> 0b00000011
+raw = float_to_q(0.5, "Q1.15")   # -> 16384 (0x4000)
+q_to_float(raw, "Q1.15")          # -> 0.5
 ```
+
+Every topic has an `explain_*` function for a step-by-step trace, and the
+two with genuine embedded-C payoff like byte swapping and Q-format conversion
+export to C:
+
+```python
+from bitlab.arch import export_c_endian_swap, export_c_fixed_point
+
+print(export_c_endian_swap(4, function_name="my_swap32"))
+print(export_c_fixed_point("Q1.15"))
+```
+
+```c
+static inline uint32_t my_swap32(uint32_t value)
+{
+    return ((value & 0x000000FFU) << 24) |
+           ((value & 0x0000FF00U) << 8) |
+           ((value & 0x00FF0000U) >> 8) |
+           ((value & 0xFF000000U) >> 24);
+}
+```
+
+IEEE 754 and Gray code intentionally don't export to C: C already gives you
+bit-exact float access via a union or `memcpy`, and Gray code is a one-line
+`n ^ (n >> 1)` that doesn't benefit from generated boilerplate. C export is
+added where it replaces code people actually reimplement — not everywhere,
+for the sake of a consistent feature checklist.
 
 ## CLI
 
@@ -210,11 +273,40 @@ bitlab registers export-c --name UART_CR1 --size 8 \
 
 bitlab parity bit 0b1011 --type even --width 4
 bitlab hamming encode 13
+
+bitlab arch float 0.15625
+bitlab arch endian 0x12345678 --width-bytes 4
+bitlab arch gray-encode 0b1011
+bitlab arch q-encode 0.5 --format Q1.15
 ```
+Run `bitlab --help`, `bitlab crc --help`, `bitlab registers --help`, `bitlab arch --help` for full usage.
 
-Run `bitlab --help`, `bitlab crc --help`, `bitlab registers --help` for full usage.
-
+```
 ## API reference
+
+### `bitlab.bitutils`
+
+| Function | Description |
+|---|---|
+| `popcount(n)` | Number of 1-bits. |
+| `has_odd_parity(n)` | True if `n` has an odd number of 1-bits. |
+| `get_bit` / `set_bit` / `flip_bit` | Single-bit read/write/toggle. |
+| `reflect(value, width)` | Bit-mirror the lowest `width` bits. |
+| `rotate_left` / `rotate_right` | Bitwise rotation within a fixed-width register. |
+
+### `bitlab.parity`
+
+| Function | Description |
+|---|---|
+| `get_parity_bit(value, type="even", bit_width=8)` | Computes the parity bit for `value`. |
+| `append_parity(value, type="even", bit_width=8)` | Returns `value` with a parity bit appended as bit `bit_width`. |
+| `check_parity(value_with_parity, type="even", bit_width=8)` | Returns `True` if the parity bit matches the data. |
+| `generate_parity_array(values, type="even", bit_width=8)` | Parity bit for each value in a sequence. |
+| `check_parity_array(values_with_parity, type="even", bit_width=8)` | Parity check for each value in a sequence. |
+| `compute_message_parity(message, type="even")` | Single overall parity bit for a whole string. |
+| `flip_random_bit(value, bit_width=8)` | Flips one random bit — useful for simulating errors in tests. |
+| `encode_hamming(data)` | Encodes a 4-bit value (0–15) into a 7-bit Hamming codeword. |
+| `decode_hamming(codeword)` | Decodes a 7-bit codeword, correcting a single-bit error if present. |
 
 ### `bitlab.crc`
 
@@ -247,49 +339,42 @@ Run `bitlab --help`, `bitlab crc --help`, `bitlab registers --help` for full usa
 | `explain(reg, **values)` | Bit diagram, field list, and (if values given) a pack trace. |
 | `export_c(reg, style="defines"\|"struct")` | C99 source: portable macros or a bit-field struct. |
 
-### `bitlab.parity`
+### `bitlab.arch`
 
 | Function | Description |
 |---|---|
-| `get_parity_bit(value, type="even", bit_width=8)` | Computes the parity bit for `value`. |
-| `append_parity(value, type="even", bit_width=8)` | Returns `value` with a parity bit appended as bit `bit_width`. |
-| `check_parity(value_with_parity, type="even", bit_width=8)` | Returns `True` if the parity bit matches the data. |
-| `generate_parity_array(values, type="even", bit_width=8)` | Parity bit for each value in a sequence. |
-| `check_parity_array(values_with_parity, type="even", bit_width=8)` | Parity check for each value in a sequence. |
-| `compute_message_parity(message, type="even")` | Single overall parity bit for a whole string. |
-| `flip_random_bit(value, bit_width=8)` | Flips one random bit — useful for simulating errors in tests. |
-| `encode_hamming(data)` | Encodes a 4-bit value (0–15) into a 7-bit Hamming codeword. |
-| `decode_hamming(codeword)` | Decodes a 7-bit codeword, correcting a single-bit error if present. |
-
-### `bitlab.bitutils`
-
-| Function | Description |
-|---|---|
-| `popcount(n)` | Number of 1-bits. |
-| `has_odd_parity(n)` | True if `n` has an odd number of 1-bits. |
-| `get_bit` / `set_bit` / `flip_bit` | Single-bit read/write/toggle. |
-| `reflect(value, width)` | Bit-mirror the lowest `width` bits. |
-| `rotate_left` / `rotate_right` | Bitwise rotation within a fixed-width register. |
+| `decompose(value, width=32\|64)` | Breaks a float into sign/exponent/mantissa fields (`IEEE754Components`). |
+| `compose(sign, exponent_raw, mantissa, width=32\|64)` | Rebuilds a float from raw fields. |
+| `to_bits(value, width)` / `from_bits(bits, width)` | Raw IEEE 754 bit pattern <-> float. |
+| `explain_float(value, width=32)` | Step-by-step decomposition trace. |
+| `swap_endianness(value, width_bytes)` | Reverses byte order of an unsigned integer. |
+| `to_big_endian` / `to_little_endian` / `to_bytes` / `from_bytes` | Byte-order encode/decode helpers. |
+| `explain_endianness(value, width_bytes)` | Byte-by-byte swap trace. |
+| `export_c_endian_swap(width_bytes, function_name=None)` | C99 byte-swap function (2/4/8 bytes). |
+| `binary_to_gray(n)` / `gray_to_binary(g)` | Binary <-> Gray code. |
+| `explain_gray(n, width=8)` | Bit-by-bit Gray code trace. |
+| `float_to_q(value, q_format="Q8.8", saturate=False)` | Float -> Q-format fixed-point integer. |
+| `q_to_float(raw, q_format="Q8.8")` | Q-format fixed-point integer -> float. |
+| `q_range(q_format)` | The representable `(min, max)` float range for a Q-format. |
+| `parse_q_format(q_format)` | Parses `"Qm.n"` into `(integer_bits, fractional_bits)`. |
+| `explain_fixed_point(value, q_format)` | Step-by-step fixed-point conversion trace. |
+| `export_c_fixed_point(q_format, prefix=None)` | C99 macros for float <-> Q-format conversion. |
 
 ## Roadmap
 
-- **v0.3.0 — Computer architecture toolkit** (`bitlab.arch`): IEEE 754
-  float deconstruction, endianness swapping, Gray code, Q-format
-  fixed-point conversion.
 - **v0.4.0 — Protocol framing** (`bitlab.comms`): COBS (Consistent Overhead
   Byte Stuffing).
 - **v1.0.0 — Reed-Solomon** (`bitlab.ecc`): burst error correction (QR
   codes, satellite comms) — planned as a dedicated release given its
   complexity.
-
 See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest              # 77 tests, including compiling and running generated
-                     # C against gcc for both crc and registers
+pytest              # 119 tests, including compiling and running generated
+                     # C against gcc for crc, registers, and arch
 python -m build      # produce a wheel + sdist in dist/
 ```
 

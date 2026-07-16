@@ -11,6 +11,16 @@ Usage:
     bitlab crc compute <data> [--preset crc8|crc16-ccitt|crc16-modbus|crc32] [--hex]
     bitlab crc explain <data> [--preset ...] [--hex]
     bitlab crc export-c [--preset ...] [--name FN_NAME]
+
+    bitlab registers explain --name NAME --size BITS --field NAME:BIT [--field ...] [--pack NAME=VAL,...]
+    bitlab registers export-c --name NAME --size BITS --field NAME:BIT [--field ...] [--style defines|struct]
+
+    bitlab arch float <value> [--width 32|64]
+    bitlab arch endian <value> [--width-bytes N]
+    bitlab arch gray-encode <value> [--width N]
+    bitlab arch gray-decode <value> [--width N]
+    bitlab arch q-encode <value> [--format Qm.n] [--saturate]
+    bitlab arch q-decode <value> [--format Qm.n]
 """
 
 from __future__ import annotations
@@ -21,6 +31,9 @@ import os
 import sys
 from dataclasses import asdict
 
+from .arch.explain import explain_endianness, explain_fixed_point, explain_float, explain_gray
+from .arch.fixed_point import q_to_float
+from .arch.gray import binary_to_gray, gray_to_binary
 from .crc.engine import compute
 from .crc.codegen import export_c as crc_export_c
 from .crc.explain import explain as crc_explain
@@ -148,6 +161,35 @@ def _build_parser() -> argparse.ArgumentParser:
     add_register_definition_args(reg_export_p)
     reg_export_p.add_argument("--style", choices=["defines", "struct"], default="defines")
 
+    # --- arch ---
+    arch_parser = subparsers.add_parser("arch", help="Computer architecture toolkit")
+    arch_sub = arch_parser.add_subparsers(dest="command")
+
+    float_p = arch_sub.add_parser("float", help="Decompose a float into IEEE 754 fields")
+    float_p.add_argument("value", type=float)
+    float_p.add_argument("--width", type=int, choices=[32, 64], default=32)
+
+    endian_p = arch_sub.add_parser("endian", help="Swap byte order of an integer")
+    endian_p.add_argument("value", type=str, help="Integer value (decimal, 0b, or 0x)")
+    endian_p.add_argument("--width-bytes", type=int, default=4)
+
+    gray_encode_p = arch_sub.add_parser("gray-encode", help="Binary -> Gray code")
+    gray_encode_p.add_argument("value", type=str)
+    gray_encode_p.add_argument("--width", type=int, default=8)
+
+    gray_decode_p = arch_sub.add_parser("gray-decode", help="Gray code -> binary")
+    gray_decode_p.add_argument("value", type=str)
+    gray_decode_p.add_argument("--width", type=int, default=8)
+
+    q_encode_p = arch_sub.add_parser("q-encode", help="Float -> Q-format fixed-point")
+    q_encode_p.add_argument("value", type=float)
+    q_encode_p.add_argument("--format", type=str, default="Q8.8", dest="q_format")
+    q_encode_p.add_argument("--saturate", action="store_true")
+
+    q_decode_p = arch_sub.add_parser("q-decode", help="Q-format fixed-point -> float")
+    q_decode_p.add_argument("value", type=str)
+    q_decode_p.add_argument("--format", type=str, default="Q8.8", dest="q_format")
+
     return parser
 
 
@@ -213,6 +255,27 @@ def _main(argv: "list[str] | None") -> int:
             print(reg_explain(reg, **pack_values))
         elif args.command == "export-c":
             print(reg_export_c(reg, style=args.style))
+        return 0
+
+    if args.group == "arch":
+        if args.command == "float":
+            print(explain_float(args.value, width=args.width))
+        elif args.command == "endian":
+            value = _parse_number(args.value)
+            print(explain_endianness(value, args.width_bytes))
+        elif args.command == "gray-encode":
+            value = _parse_number(args.value)
+            result = binary_to_gray(value)
+            print(f"{result} (0b{result:0{args.width}b})")
+        elif args.command == "gray-decode":
+            value = _parse_number(args.value)
+            result = gray_to_binary(value)
+            print(f"{result} (0b{result:0{args.width}b})")
+        elif args.command == "q-encode":
+            print(explain_fixed_point(args.value, args.q_format))
+        elif args.command == "q-decode":
+            raw = _parse_number(args.value)
+            print(q_to_float(raw, args.q_format))
         return 0
 
     parser.print_help()

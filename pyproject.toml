@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bitlab"
-version = "0.2.0"
+version = "0.3.0"
 description = "A toolkit for embedded systems, binary data, and digital communications: parity, Hamming codes, and CRC — with C code export."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -26,6 +26,11 @@ keywords = [
     "register",
     "bitfield",
     "microcontroller",
+    "ieee754",
+    "endianness",
+    "gray-code",
+    "fixed-point",
+    "q-format",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
