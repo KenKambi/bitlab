@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bitlab"
-version = "0.3.0"
+version = "0.4.0"
 description = "A toolkit for embedded systems, binary data, and digital communications: parity, Hamming codes, and CRC — with C code export."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -31,6 +31,10 @@ keywords = [
     "gray-code",
     "fixed-point",
     "q-format",
+    "cobs",
+    "framing",
+    "byte-stuffing",
+    "serial-protocol",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

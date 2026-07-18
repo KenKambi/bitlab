@@ -73,11 +73,12 @@ CRC catalogue check values.
 
 ```
 bitlab/
-├── bitutils/    foundational bit ops shared by every submodule
-├── parity/      parity bit checking + Hamming(7,4) error correction
-├── crc/         CRC-8/16/32, generic engine, explain(), export_c()
-├── registers/   hardware register bit-field mapper, explain(), export_c()
-└── arch/        IEEE 754, endianness, Gray code, Q-format fixed-point
+ ├── bitutils/    foundational bit ops shared by every submodule
+ ├── parity/      parity bit checking + Hamming(7,4) error correction
+ ├── crc/         CRC-8/16/32, generic engine, explain(), export_c()
+ ├── registers/   hardware register bit-field mapper, explain(), export_c()
+ ├── arch/        IEEE 754, endianness, Gray code, Q-format fixed-point
+ └── comms/       COBS framing, explain_cobs(), export_c()
 ```
 ### `bitlab.bitutils` — shared foundation
 
@@ -258,6 +259,79 @@ bit-exact float access via a union or `memcpy`, and Gray code is a one-line
 added where it replaces code people actually reimplement — not everywhere,
 for the sake of a consistent feature checklist.
 
+### `bitlab.comms` — COBS framing
+
+Before sending data over UART or SPI, a receiver needs an unambiguous way
+to find where one packet ends and the next begins. COBS (Consistent
+Overhead Byte Stuffing) removes every zero byte from a payload, so a
+single `0x00` can be used as a frame delimiter — with at most 1 byte of
+overhead per 254 bytes of payload. (Note: `cobs-encode`/`cobs-decode` take hex strings as input, e.g. `11220033`, not raw text.)
+
+```python
+from bitlab.comms import cobs_encode, cobs_decode
+
+encoded = cobs_encode(b"hello\x00world")
+0x00 in encoded          # -> False, safe to use 0x00 as a delimiter
+cobs_decode(encoded)     # -> b'hello\x00world'
+```
+
+`cobs_frame`/`cobs_unframe` add/strip the trailing delimiter for you, for
+data going straight to/from a serial link:
+
+```python
+from bitlab.comms import cobs_frame, cobs_unframe
+
+wire_bytes = cobs_frame(b"hello\x00world")   # ready to write to a UART
+cobs_unframe(wire_bytes)                      # -> b'hello\x00world'
+```
+
+`cobs_decode` doesn't just trust its input — it rejects a truncated final
+block and a zero byte in a position where a valid encoder would never put
+one, which is a cheap way to catch line-noise corruption instead of
+silently returning garbage.
+
+```python
+>>> from bitlab.comms import explain_cobs
+>>> print(explain_cobs(bytes([0x11, 0x22, 0x00, 0x33])))
+COBS encode
+Input (4 bytes): 11 22 00 33
+
+Rule: scan for the next zero byte (or 254 non-zero bytes, whichever
+comes first). Emit [count][the non-zero bytes], where count = distance
+to the next block (including the count byte itself). A zero byte is
+never emitted -- it's replaced by starting a new block.
+
+Block 0: bytes 0-1 = 11 22  (hit a zero byte) -> emit [0x03] 11 22
+Block 1: bytes 3-3 = 33  (end of input) -> emit [0x02] 33
+
+Encoded (5 bytes): 03 11 22 02 33
+Contains a zero byte: no
+A single 0x00 can now be appended as an unambiguous frame delimiter.
+```
+
+```python
+from bitlab.comms import export_c
+
+print(export_c())
+```
+
+```c
+size_t cobs_encode(const uint8_t *src, size_t len, uint8_t *dst)
+{
+    size_t write_index = 1;
+    size_t code_index = 0;
+    uint8_t code = 1;
+    /* ... */
+}
+```
+
+Unlike `crc`/`registers`, there's no per-config table to generate for
+COBS — it's a fixed algorithm, so `export_c()` emits a single well-tested
+reference implementation rather than something parameterized. It's
+validated the same way as everything else here: compiled with `gcc` and
+property-tested against the Python implementation across thousands of
+randomized inputs.
+
 ## CLI
 
 One `bitlab` command covers every module:
@@ -278,8 +352,11 @@ bitlab arch float 0.15625
 bitlab arch endian 0x12345678 --width-bytes 4
 bitlab arch gray-encode 0b1011
 bitlab arch q-encode 0.5 --format Q1.15
+bitlab comms cobs-encode 112200 33
+bitlab comms cobs-explain 11220033
+bitlab comms export-c
 ```
-Run `bitlab --help`, `bitlab crc --help`, `bitlab registers --help`, `bitlab arch --help` for full usage.
+Run bitlab --help, bitlab crc --help, bitlab registers --help, bitlab arch --help, bitlab comms --help for full usage.
 
 ```
 ## API reference
@@ -360,10 +437,18 @@ Run `bitlab --help`, `bitlab crc --help`, `bitlab registers --help`, `bitlab arc
 | `explain_fixed_point(value, q_format)` | Step-by-step fixed-point conversion trace. |
 | `export_c_fixed_point(q_format, prefix=None)` | C99 macros for float <-> Q-format conversion. |
 
+### `bitlab.comms`
+
+| Function | Description |
+|---|---|
+| `cobs_encode(data)` | COBS-encodes `data`. Output never contains a zero byte. |
+| `cobs_decode(encoded)` | Reverses `cobs_encode`. Raises `ValueError` on malformed input. |
+| `cobs_frame(data)` / `cobs_unframe(framed)` | Encode+append, or strip+decode, the `0x00` delimiter. |
+| `explain_cobs(data, max_blocks=6)` | Step-by-step block-by-block encode trace. |
+| `export_c(encode_fn_name=..., decode_fn_name=...)` | Standalone C99 encode/decode functions. |
+```
 ## Roadmap
 
-- **v0.4.0 — Protocol framing** (`bitlab.comms`): COBS (Consistent Overhead
-  Byte Stuffing).
 - **v1.0.0 — Reed-Solomon** (`bitlab.ecc`): burst error correction (QR
   codes, satellite comms) — planned as a dedicated release given its
   complexity.
@@ -373,8 +458,8 @@ See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
 ```bash
 pip install -e ".[dev]"
-pytest              # 119 tests, including compiling and running generated
-                     # C against gcc for crc, registers, and arch
+pytest              # 150 tests, including compiling and running generated
+                     # C against gcc for crc, registers, arch and comms
 python -m build      # produce a wheel + sdist in dist/
 ```
 

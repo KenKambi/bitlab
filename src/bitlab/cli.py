@@ -21,6 +21,11 @@ Usage:
     bitlab arch gray-decode <value> [--width N]
     bitlab arch q-encode <value> [--format Qm.n] [--saturate]
     bitlab arch q-decode <value> [--format Qm.n]
+
+    bitlab comms cobs-encode <hex_data>
+    bitlab comms cobs-decode <hex_data>
+    bitlab comms cobs-explain <hex_data> [--max-blocks N]
+    bitlab comms export-c [--encode-name NAME] [--decode-name NAME]
 """
 
 from __future__ import annotations
@@ -34,6 +39,9 @@ from dataclasses import asdict
 from .arch.explain import explain_endianness, explain_fixed_point, explain_float, explain_gray
 from .arch.fixed_point import q_to_float
 from .arch.gray import binary_to_gray, gray_to_binary
+from .comms.cobs import cobs_decode, cobs_encode
+from .comms.codegen import export_c as comms_export_c
+from .comms.explain import explain_cobs
 from .crc.engine import compute
 from .crc.codegen import export_c as crc_export_c
 from .crc.explain import explain as crc_explain
@@ -190,6 +198,24 @@ def _build_parser() -> argparse.ArgumentParser:
     q_decode_p.add_argument("value", type=str)
     q_decode_p.add_argument("--format", type=str, default="Q8.8", dest="q_format")
 
+    # --- comms ---
+    comms_parser = subparsers.add_parser("comms", help="Protocol framing (COBS)")
+    comms_sub = comms_parser.add_subparsers(dest="command")
+
+    cobs_encode_p = comms_sub.add_parser("cobs-encode", help="COBS-encode hex data")
+    cobs_encode_p.add_argument("data", type=str, help="Hex-encoded input bytes, e.g. 11220033")
+
+    cobs_decode_p = comms_sub.add_parser("cobs-decode", help="COBS-decode hex data")
+    cobs_decode_p.add_argument("data", type=str, help="Hex-encoded COBS-encoded bytes")
+
+    cobs_explain_p = comms_sub.add_parser("cobs-explain", help="Step-by-step COBS encode trace")
+    cobs_explain_p.add_argument("data", type=str, help="Hex-encoded input bytes")
+    cobs_explain_p.add_argument("--max-blocks", type=int, default=6)
+
+    comms_export_p = comms_sub.add_parser("export-c", help="Export COBS encode/decode as C source")
+    comms_export_p.add_argument("--encode-name", type=str, default="cobs_encode")
+    comms_export_p.add_argument("--decode-name", type=str, default="cobs_decode")
+
     return parser
 
 
@@ -276,6 +302,20 @@ def _main(argv: "list[str] | None") -> int:
         elif args.command == "q-decode":
             raw = _parse_number(args.value)
             print(q_to_float(raw, args.q_format))
+        return 0
+
+    if args.group == "comms":
+        if args.command == "cobs-encode":
+            data = bytes.fromhex(args.data)
+            print(cobs_encode(data).hex())
+        elif args.command == "cobs-decode":
+            data = bytes.fromhex(args.data)
+            print(cobs_decode(data).hex())
+        elif args.command == "cobs-explain":
+            data = bytes.fromhex(args.data)
+            print(explain_cobs(data, max_blocks=args.max_blocks))
+        elif args.command == "export-c":
+            print(comms_export_c(encode_fn_name=args.encode_name, decode_fn_name=args.decode_name))
         return 0
 
     parser.print_help()

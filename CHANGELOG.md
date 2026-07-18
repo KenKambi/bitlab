@@ -8,10 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- COBS framing (`bitlab.comms`) — Consistent Overhead Byte Stuffing for
-  serial protocols.
-- Reed-Solomon burst error correction — planned as a later, dedicated
-  release given its complexity.
+- Reed-Solomon burst error correction (`bitlab.ecc`) — planned as a later,
+  dedicated release given its complexity.
+
+## [0.4.0] - 18-07-2026
+
+### Added
+- **New `bitlab.comms` submodule**: protocol framing.
+  - **COBS** (`cobs.py`): `cobs_encode`/`cobs_decode` (Consistent Overhead
+    Byte Stuffing) — removes all zero bytes from a payload so a single 0x00
+    can be used as an unambiguous frame delimiter on a serial link, with at
+    most 1 byte of overhead per 254 bytes of payload. `cobs_frame`/
+    `cobs_unframe` convenience wrappers add/strip the trailing delimiter.
+  - Verified against the published reference test vectors (Cheshire &
+    Baker, IEEE/ACM ToN 1999), plus thousands of randomized round-trip
+    property tests, including the 254-byte block-length boundary.
+  - `cobs_decode` rejects malformed input: a zero byte where a length byte
+    is expected, a truncated final block, *and* a zero byte found inside a
+    block's data — the last of which can only indicate corrupted input,
+    since a valid encoder never places one there.
+  - `explain_cobs(data, max_blocks=6)`: step-by-step block-by-block trace,
+    generated from the same code path as the real encoder so it can't
+    drift out of sync with the actual output.
+  - `export_c(encode_fn_name=..., decode_fn_name=...)`: standalone C99
+    encode/decode functions. Unlike `crc`/`registers`, there's no
+    per-config table to generate here — it emits a fixed, well-tested
+    reference implementation, validated by compiling with `gcc` and
+    property-testing the compiled binary against the Python implementation
+    across randomized inputs.
+- `bitlab comms cobs-encode|cobs-decode|cobs-explain|export-c` CLI
+  subcommands.
+- 31 new tests (150 total).
 
 ## [0.3.0] - 16-07-2026
 
@@ -45,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   subcommands.
 - 42 new tests (119 total).
 
+### Changed
+- Package version bumped to 0.3.0.
+
 ## [0.2.0] - 15-07-2026
 
 ### Added
@@ -74,6 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   subcommands, using a `--field NAME:BIT` / `NAME:START-END` syntax.
 - 21 new tests (77 total), including compiled-C correctness checks for both
   export styles.
+
+### Changed
+- Package version bumped to 0.2.0.
 
 ## [0.1.0] - 14-07-2026
 
@@ -114,8 +147,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   vs. table-driven CRC implementations and end-to-end compilation of
   generated C source.
 
-  
-[Unreleased]: https://github.com/KenKambi/bitlab/compare/v0.3.0...HEAD
+### Changed
+- `parity_toolkit.parity` → `bitlab.parity.parity` (same public API).
+- `parity_toolkit.hamming` → `bitlab.parity.hamming` (same public API).
+- Low-level bit helpers moved from `parity_toolkit.utils` to
+  `bitlab.bitutils`.
+
+### Migration from `parity-toolkit`
+```diff
+- from parity_toolkit import get_parity_bit, encode_hamming, decode_hamming
++ from bitlab.parity import get_parity_bit, encode_hamming, decode_hamming
+```
+```diff
+- parity-toolkit bit 0b1011 --type even --width 4
++ bitlab parity bit 0b1011 --type even --width 4
+```
+The function signatures and behavior are unchanged — only the import path
+and CLI command prefix moved.
+
+---
+
+## Prior history (as `parity-toolkit`, pre-rename)
+
+### [0.1.0] - 2026-07-13 (parity-toolkit, superseded)
+- Initial release: `get_parity_bit`, `append_parity`, `check_parity`,
+  `generate_parity_array`, `check_parity_array`, `compute_message_parity`,
+  `flip_random_bit`.
+- Hamming(7,4) single-bit error correction: `encode_hamming`,
+  `decode_hamming`.
+- `parity-toolkit` CLI.
+
+[Unreleased]: https://github.com/KenKambi/bitlab/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/KenKambi/bitlab/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/KenKambi/bitlab/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/KenKambi/bitlab/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KenKambi/bitlab/releases/tag/v0.1.0
