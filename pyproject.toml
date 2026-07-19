@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bitlab"
-version = "0.4.0"
-description = "A toolkit for embedded systems, binary data, and digital communications: parity, Hamming codes, and CRC — with C code export."
+version = "1.0.0"
+description = "A toolkit for embedded systems, binary data, and digital communications: parity, Hamming codes, CRC, register bit-fields, IEEE 754/endianness/Gray code, COBS framing, and Reed-Solomon — with C code export."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
@@ -35,6 +35,11 @@ keywords = [
     "framing",
     "byte-stuffing",
     "serial-protocol",
+    "reed-solomon",
+    "galois-field",
+    "gf256",
+    "error-correcting-code",
+    "burst-error-correction",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -55,7 +60,7 @@ Issues = "https://github.com/KenKambi/bitlab/issues"
 bitlab = "bitlab.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "build", "twine"]
+dev = ["pytest>=7.0", "build", "twine", "reedsolo>=1.7.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bitlab"]

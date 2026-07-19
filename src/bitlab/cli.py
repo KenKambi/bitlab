@@ -26,6 +26,11 @@ Usage:
     bitlab comms cobs-decode <hex_data>
     bitlab comms cobs-explain <hex_data> [--max-blocks N]
     bitlab comms export-c [--encode-name NAME] [--decode-name NAME]
+
+    bitlab ecc encode <hex_data> --nsym N
+    bitlab ecc decode <hex_data> --nsym N
+    bitlab ecc explain <hex_data> --nsym N
+    bitlab ecc export-c --nsym N [--name FN_NAME]
 """
 
 from __future__ import annotations
@@ -42,6 +47,9 @@ from .arch.gray import binary_to_gray, gray_to_binary
 from .comms.cobs import cobs_decode, cobs_encode
 from .comms.codegen import export_c as comms_export_c
 from .comms.explain import explain_cobs
+from .ecc.codegen import export_c_encoder as ecc_export_c
+from .ecc.explain import explain_rs_encode
+from .ecc.reed_solomon import ReedSolomonError, rs_decode, rs_encode
 from .crc.engine import compute
 from .crc.codegen import export_c as crc_export_c
 from .crc.explain import explain as crc_explain
@@ -216,6 +224,26 @@ def _build_parser() -> argparse.ArgumentParser:
     comms_export_p.add_argument("--encode-name", type=str, default="cobs_encode")
     comms_export_p.add_argument("--decode-name", type=str, default="cobs_decode")
 
+    # --- ecc ---
+    ecc_parser = subparsers.add_parser("ecc", help="Reed-Solomon error correction")
+    ecc_sub = ecc_parser.add_subparsers(dest="command")
+
+    ecc_encode_p = ecc_sub.add_parser("encode", help="Reed-Solomon-encode hex data")
+    ecc_encode_p.add_argument("data", type=str, help="Hex-encoded input bytes")
+    ecc_encode_p.add_argument("--nsym", type=int, required=True, help="Number of parity bytes")
+
+    ecc_decode_p = ecc_sub.add_parser("decode", help="Reed-Solomon-decode (and correct) hex data")
+    ecc_decode_p.add_argument("data", type=str, help="Hex-encoded encoded (possibly corrupted) bytes")
+    ecc_decode_p.add_argument("--nsym", type=int, required=True)
+
+    ecc_explain_p = ecc_sub.add_parser("explain", help="Step-by-step RS encode trace")
+    ecc_explain_p.add_argument("data", type=str)
+    ecc_explain_p.add_argument("--nsym", type=int, required=True)
+
+    ecc_export_p = ecc_sub.add_parser("export-c", help="Export an RS encoder as C source")
+    ecc_export_p.add_argument("--nsym", type=int, required=True)
+    ecc_export_p.add_argument("--name", type=str, default="rs_encode")
+
     return parser
 
 
@@ -316,6 +344,24 @@ def _main(argv: "list[str] | None") -> int:
             print(explain_cobs(data, max_blocks=args.max_blocks))
         elif args.command == "export-c":
             print(comms_export_c(encode_fn_name=args.encode_name, decode_fn_name=args.decode_name))
+        return 0
+
+    if args.group == "ecc":
+        if args.command == "encode":
+            data = bytes.fromhex(args.data)
+            print(rs_encode(data, args.nsym).hex())
+        elif args.command == "decode":
+            data = bytes.fromhex(args.data)
+            try:
+                print(rs_decode(data, args.nsym).hex())
+            except ReedSolomonError as e:
+                print(f"Decode failed: {e}", file=sys.stderr)
+                return 1
+        elif args.command == "explain":
+            data = bytes.fromhex(args.data)
+            print(explain_rs_encode(data, args.nsym))
+        elif args.command == "export-c":
+            print(ecc_export_c(args.nsym, function_name=args.name))
         return 0
 
     parser.print_help()

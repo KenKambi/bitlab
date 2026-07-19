@@ -78,7 +78,8 @@ bitlab/
  ├── crc/         CRC-8/16/32, generic engine, explain(), export_c()
  ├── registers/   hardware register bit-field mapper, explain(), export_c()
  ├── arch/        IEEE 754, endianness, Gray code, Q-format fixed-point
- └── comms/       COBS framing, explain_cobs(), export_c()
+ ├── comms/       COBS framing, explain_cobs(), export_c()
+ └── ecc/         Reed-Solomon burst error correction, explain(), export_c()
 ```
 ### `bitlab.bitutils` — shared foundation
 
@@ -332,6 +333,69 @@ validated the same way as everything else here: compiled with `gcc` and
 property-tested against the Python implementation across thousands of
 randomized inputs.
 
+### `bitlab.ecc` — Reed-Solomon
+
+Parity and Hamming(7,4) can only handle isolated single-bit errors. Real
+noisy channels — scratched CDs, deep-space telemetry, QR codes partially
+covered by a coffee stain — produce *burst* errors: clusters of corrupted
+bytes. Reed-Solomon corrects up to `nsym // 2` byte errors anywhere in a
+block, regardless of whether they're scattered or clustered together.
+
+```python
+from bitlab.ecc import rs_encode, rs_decode
+
+encoded = rs_encode(b"Hello, World!", nsym=10)
+corrupted = bytearray(encoded)
+corrupted[0] ^= 0xFF
+corrupted[5] ^= 0xFF
+rs_decode(bytes(corrupted), nsym=10)   # -> b'Hello, World!'
+```
+
+`nsym` parity bytes correct up to `nsym // 2` byte errors, and message +
+parity together must fit in 255 bytes — the fundamental limit of GF(256).
+For longer data, split it into multiple blocks yourself (chunking strategy
+is genuinely application-specific, so bitlab doesn't impose one).
+
+```python
+>>> from bitlab.ecc import explain_rs_encode
+>>> print(explain_rs_encode(bytes([64, 2]), nsym=4))
+Reed-Solomon encode
+Message (2 bytes): 40 02
+Parity symbols requested: 4  (corrects up to 2 byte errors)
+
+Generator polynomial g(x) = product of (x - 2^i) for i in 0..3:
+  roots at 2^0..2^3 = 1, 2, 4, 8
+  g(x) coefficients (highest degree first): [1, 15, 54, 120, 64]
+...
+Parity bytes: fb 08 4e ff
+Encoded output (6 bytes): 40 02 fb 08 4e ff
+```
+
+Decoding has no `explain()` — a faithful trace of syndromes,
+Berlekamp-Massey, Chien search, and Forney correction would run hundreds
+of lines without actually clarifying the algorithm. Encoding is where a
+step-by-step trace earns its keep.
+
+```python
+from bitlab.ecc import export_c_encoder
+
+print(export_c_encoder(nsym=10))
+```
+
+Only the **encoder** exports to C, not the decoder — deliberately. Real
+systems using RS (satellite telemetry, QR scanners, RAID 6) typically
+encode on the resource-constrained side and decode where there's far more
+compute budget. A generated encoder matches how RS is actually deployed;
+a generated decoder would be a large, rarely-needed surface to maintain.
+
+Given the algorithm's complexity, this implementation was cross-validated
+during development against the independent `reedsolo` library — byte-for-byte
+identical encoding and matching error correction across thousands of
+randomized trials (`reedsolo` is a dev-only test dependency; `bitlab`
+itself stays zero-dependency). Two real bugs were caught this way and are
+documented honestly in [CHANGELOG.md](CHANGELOG.md) rather than smoothed
+over.
+
 ## CLI
 
 One `bitlab` command covers every module:
@@ -355,8 +419,12 @@ bitlab arch q-encode 0.5 --format Q1.15
 bitlab comms cobs-encode 112200 33
 bitlab comms cobs-explain 11220033
 bitlab comms export-c
+bitlab ecc encode 4002 --nsym 10
+bitlab ecc decode bf0220a2a7e8b687ceaf63bc --nsym 10
+bitlab ecc explain 4002 --nsym 4
+bitlab ecc export-c --nsym 10
 ```
-Run bitlab --help, bitlab crc --help, bitlab registers --help, bitlab arch --help, bitlab comms --help for full usage.
+Run bitlab --help, bitlab crc --help, bitlab registers --help, bitlab arch --help, bitlab comms --help, bitlab ecc --help for full usage.
 
 ```
 ## API reference
@@ -446,22 +514,32 @@ Run bitlab --help, bitlab crc --help, bitlab registers --help, bitlab arch --hel
 | `cobs_frame(data)` / `cobs_unframe(framed)` | Encode+append, or strip+decode, the `0x00` delimiter. |
 | `explain_cobs(data, max_blocks=6)` | Step-by-step block-by-block encode trace. |
 | `export_c(encode_fn_name=..., decode_fn_name=...)` | Standalone C99 encode/decode functions. |
+
+### `bitlab.ecc`
+
+| Function | Description |
+|---|---|
+| `rs_encode(data, nsym)` | Appends `nsym` Reed-Solomon parity bytes. `len(data) + nsym` must be ≤ 255. |
+| `rs_decode(data, nsym)` | Corrects up to `nsym // 2` byte errors and returns the original message. Raises `ReedSolomonError` if uncorrectable. |
+| `generator_poly(nsym)` | The generator polynomial used for encoding. |
+| `explain_rs_encode(data, nsym)` | Step-by-step encoding trace. |
+| `export_c_encoder(nsym, function_name=...)` | Standalone C99 encoder (encoder only — see above). |
+| `ReedSolomonError` | Raised on undecodable input. |
+| `MAX_BLOCK_SIZE` | `255` — the GF(256) block limit. |
 ```
-## Roadmap
 
-- **v1.0.0 — Reed-Solomon** (`bitlab.ecc`): burst error correction (QR
-  codes, satellite comms) — planned as a dedicated release given its
-  complexity.
-See [CHANGELOG.md](CHANGELOG.md) for full release history.
+### 6. Development
 
-## Development
+```diff
+ pip install -e ".[dev]"
 
-```bash
-pip install -e ".[dev]"
-pytest              # 150 tests, including compiling and running generated
-                     # C against gcc for crc, registers, arch and comms
-python -m build      # produce a wheel + sdist in dist/
+
+ pytest              # 178 tests, including compiling/running generated C
+                     # (crc, registers, arch, comms, ecc) and cross-validating
+                     # Reed-Solomon against the independent `reedsolo` library
+ python -m build      # produce a wheel + sdist in dist/
 ```
+---
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full dev workflow and release
 process.

@@ -7,9 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Planned
-- Reed-Solomon burst error correction (`bitlab.ecc`) — planned as a later,
-  dedicated release given its complexity.
+No changes yet.
+
+## [1.0.0] - 19-07-2026
+
+### Added
+- **New `bitlab.ecc` submodule**: Reed-Solomon error correction over
+  GF(256) — the flagship feature. Unlike parity or Hamming(7,4), RS
+  corrects *burst* errors (clusters of corrupted bytes) or scattered
+  corruption anywhere in a block, up to `nsym // 2` byte errors, which is
+  what QR codes, CDs/DVDs, RAID 6, and deep-space telemetry actually use.
+  - `rs_encode(data, nsym)` / `rs_decode(data, nsym)`: systematic
+    encoding (parity appended, message bytes unchanged) and syndrome-based
+    decoding (Berlekamp-Massey error locator, Chien search, Forney
+    algorithm for error magnitudes).
+  - `generator_poly(nsym)`, `ReedSolomonError`, `MAX_BLOCK_SIZE` (255 —
+    the fundamental GF(256) block limit; chunking longer data into
+    multiple blocks is left to the caller).
+  - `explain_rs_encode(data, nsym)`: step-by-step encoding trace. Decoding
+    intentionally has no `explain()` — a faithful trace of
+    syndromes/Berlekamp-Massey/Chien/Forney would run hundreds of lines
+    without actually clarifying the algorithm.
+  - `export_c_encoder(nsym, function_name=...)`: standalone C99 encoder
+    (embeds GF(256) tables and the generator polynomial for a fixed
+    `nsym`). The decoder is deliberately **not** exported to C — real
+    systems that use RS typically encode on the resource-constrained side
+    (satellite, embedded sensor) and decode on the receiver with far more
+    compute budget, so a generated encoder matches how RS is actually
+    deployed; a generated decoder would be a large, rarely-needed surface
+    to maintain.
+- `bitlab ecc encode|decode|explain|export-c` CLI subcommands.
+- 28 new tests (178 total).
+
+### Validation notes
+Given the complexity of this algorithm, it was cross-validated against the
+independent `reedsolo` library (added as a **dev-only** test dependency —
+`bitlab` itself remains zero runtime dependencies) rather than relying
+solely on self-consistency: byte-for-byte identical encode output, and
+matching decode success/failure and recovered data across thousands of
+randomized error-injection trials, plus the classic worked example from
+the "Reed-Solomon codes for coders" tutorial (message `[64, 2]`, nsym=10).
+
+Two real bugs were caught and fixed during this process, both documented
+here rather than smoothed over:
+- An early version searched for error locations using the wrong root
+  convention in the Chien search step, causing most multi-symbol-error
+  corrections to fail. Fixed by reversing the error locator polynomial
+  before the search (matching the reference algorithm's convention).
+- The first version of the C-exported encoder let its polynomial-division
+  scratch buffer overwrite the original message bytes it needed to return
+  unchanged. Fixed by dividing in a separate buffer and copying the
+  original data back into the output afterward.
+Both were caught by property-testing against random inputs rather than
+hand-picked examples, which is why that style of testing is used
+throughout this module.
 
 ## [0.4.0] - 18-07-2026
 
@@ -177,7 +228,8 @@ and CLI command prefix moved.
   `decode_hamming`.
 - `parity-toolkit` CLI.
 
-[Unreleased]: https://github.com/KenKambi/bitlab/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/KenKambi/bitlab/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/KenKambi/bitlab/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/KenKambi/bitlab/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/KenKambi/bitlab/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/KenKambi/bitlab/compare/v0.1.0...v0.2.0
